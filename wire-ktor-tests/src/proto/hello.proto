@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package com.douman.wire_ktor.wire_ktor_tests.proto;
+
+service TestService {
+  rpc ReturnError(ProtoRequest) returns (ProtoResponse);
+  rpc ReturnSuccess(ProtoRequest) returns (ProtoResponse);
+  rpc ReturnSuccessNoBody(ProtoRequest) returns (ProtoResponse);
+  rpc ReturnListSuccess(ProtoRequest) returns (stream ProtoResponse);
+  rpc ReturnSuccessOnList(stream ProtoRequest) returns (ProtoResponse);
+  rpc ReturnListSuccessOnList(stream ProtoRequest) returns (stream ProtoResponse);
+}
+
+message ProtoRequest {
+  optional string ping = 1;
+}
+
+message ProtoResponse {
+  string pong = 1;
+}
