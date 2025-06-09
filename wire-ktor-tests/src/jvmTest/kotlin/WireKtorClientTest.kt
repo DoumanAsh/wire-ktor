@@ -3,6 +3,8 @@ import kotlin.test.Test
 import com.douman.wire_ktor.WireKtorClient
 import com.douman.wire_ktor.wire_ktor_tests.proto.GrpcTestServiceClient
 import com.douman.wire_ktor.wire_ktor_tests.proto.ProtoRequest
+import com.douman.wire_ktor.plugins.ktor_client_plugin
+import com.douman.wire_ktor.plugins.KtorClientApiConfig
 import com.squareup.wire.GrpcException
 import com.squareup.wire.GrpcStatus
 import io.ktor.client.HttpClient
@@ -25,6 +27,7 @@ class WireKtorClientTest {
         install(Logging) {
             level = LogLevel.HEADERS
         }
+        install(ktor_client_plugin(KtorClientApiConfig("test key")))
         defaultRequest {
             url {
                 protocol = URLProtocol.HTTPS

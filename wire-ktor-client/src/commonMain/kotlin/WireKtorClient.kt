@@ -13,7 +13,6 @@ import com.squareup.wire.GrpcException
 import com.squareup.wire.GrpcMethod
 import com.squareup.wire.GrpcStatus
 import com.squareup.wire.GrpcStreamingCall
-import com.squareup.wire.internal.ProtocolException
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.expectSuccess
 import io.ktor.client.request.HttpRequestBuilder
