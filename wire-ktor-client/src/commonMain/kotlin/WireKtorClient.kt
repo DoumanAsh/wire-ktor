@@ -3,6 +3,10 @@ import com.douman.wire_ktor.internal.extractHttpResponseHeaders
 import com.douman.wire_ktor.internal.decodeHttpBody
 import com.douman.wire_ktor.internal.checkHttpResponseForGrpcException
 import com.douman.wire_ktor.internal.WireKtorContent
+import com.douman.wire_ktor.internal.WireKtorContents
+import com.douman.wire_ktor.internal.prepareGrpcRequest
+import com.douman.wire_ktor.internal.channelToMessageSink
+import com.douman.wire_ktor.internal.channelToMessageSource
 
 //part of wire
 import okio.IOException
@@ -13,25 +17,25 @@ import com.squareup.wire.GrpcException
 import com.squareup.wire.GrpcMethod
 import com.squareup.wire.GrpcStatus
 import com.squareup.wire.GrpcStreamingCall
+import com.squareup.wire.MessageSink
+import com.squareup.wire.MessageSource
 import io.ktor.client.HttpClient
-import io.ktor.client.plugins.expectSuccess
 import io.ktor.client.request.HttpRequestBuilder
-import io.ktor.client.request.accept
-import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
-import io.ktor.http.ContentType
-import io.ktor.http.HttpMethod
-import io.ktor.http.encodedPath
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ReceiveChannel
+import kotlinx.coroutines.channels.SendChannel
 
 class WireKtorClient(
     private val client: HttpClient,
@@ -42,7 +46,7 @@ class WireKtorClient(
     }
 
     override fun <S : Any, R : Any> newStreamingCall(method: GrpcMethod<S, R>): GrpcStreamingCall<S, R> {
-        throw UnsupportedOperationException("Analytics Ktor client does not support stream calls!")
+        return WireKtorStreamingCall(method)
     }
 
     inner class WireKtorCall<S : Any, R : Any>(
@@ -97,19 +101,9 @@ class WireKtorClient(
         private fun buildRequest(request: S): HttpRequestBuilder {
             val grpcMethod = method
             return HttpRequestBuilder().apply {
-                method = HttpMethod.Post
-                url.encodedPath = grpcMethod.path
-
-                accept(ContentType("application", "grpc"))
-                requestMetadata.forEach {
-                    header(it.key, it.value)
-                }
-                header("te", "trailers")
-                //Explicitly state we do not expect compressed response
-                header("grpc-accept-encoding", "identity")
+                prepareGrpcRequest(this, grpcMethod.path, requestMetadata)
 
                 setBody(WireKtorContent(grpcMethod.requestAdapter, request))
-                expectSuccess = false
             }
         }
 
@@ -135,5 +129,81 @@ class WireKtorClient(
                 throw GrpcException(GrpcStatus.INTERNAL, "Incomplete response=${error.message}", null, httpRequest.url.toString())
             }
         }
-    }
+    } //WireKtorCall
+
+
+    inner class WireKtorStreamingCall<S : Any, R : Any>(
+        override val method: GrpcMethod<S, R>,
+    ) : GrpcStreamingCall<S, R> {
+        private lateinit var response: Deferred<R>
+        private lateinit var job: Job
+
+        override val timeout: Timeout = Timeout.NONE
+
+        override var requestMetadata: Map<String, String> = mapOf()
+
+        override var responseMetadata: Map<String, String>? = null
+            private set
+
+        override fun cancel() {
+            job.cancel()
+            response.cancel()
+        }
+
+        override fun clone(): GrpcStreamingCall<S, R> = WireKtorStreamingCall(method)
+
+        override fun isCanceled(): Boolean = response.isCancelled
+
+        override fun isExecuted(): Boolean = response.isCompleted
+
+        private fun buildRequest(requests: Channel<S>): HttpRequestBuilder {
+            val grpcMethod = method
+            return HttpRequestBuilder().apply {
+                prepareGrpcRequest(this, grpcMethod.path, requestMetadata)
+
+                setBody(WireKtorContents(grpcMethod.requestAdapter, requests))
+            }
+        }
+
+        override fun executeIn(scope: CoroutineScope): Pair<SendChannel<S>, ReceiveChannel<R>> {
+            val requests = Channel<S>(1)
+            val responses = Channel<R>(1)
+
+            job =
+                scope.launch {
+                    val httpRequest = buildRequest(requests)
+                    val response = client.post(httpRequest)
+
+                    responseMetadata = extractHttpResponseHeaders(response)
+                    val body = response.bodyAsChannel()
+                    checkHttpResponseForGrpcException(httpRequest, response)
+
+                    try {
+                        while (!body.isClosedForRead) {
+                            responses.send(decodeHttpBody(method.responseAdapter, body))
+                        }
+                    } catch (error: IOException) {
+                        throw GrpcException(GrpcStatus.INTERNAL, "Unexpected stream error=${error.message}", null, httpRequest.url.toString())
+                    }
+                }
+
+            job.invokeOnCompletion {
+                requests.close()
+                responses.close()
+            }
+            return requests to responses
+        }
+
+        @Deprecated(
+            "Provide a scope, preferably not GlobalScope",
+            replaceWith = ReplaceWith("executeIn(GlobalScope)", "kotlinx.coroutines.GlobalScope"),
+            level = DeprecationLevel.WARNING,
+        )
+        override fun execute(): Pair<SendChannel<S>, ReceiveChannel<R>> = executeIn(scope)
+
+        override fun executeBlocking(): Pair<MessageSink<S>, MessageSource<R>> {
+            val result = executeIn(scope)
+            return channelToMessageSink(result.first) to channelToMessageSource(result.second)
+        }
+    } // WireKtorStreamingCall
 }
