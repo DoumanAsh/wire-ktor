@@ -5,7 +5,7 @@ on:
     branches:
       - master
     paths:
-      - '.github/workflows/checks.yml'
+      - '.github/workflows/checks.yaml'
       - '**/*.kts'
       - '**/*.kt'
       - '**/*.properties'
@@ -15,14 +15,14 @@ on:
     branches:
       - '**'
     paths:
-      - '.github/workflows/checks.yml'
+      - '.github/workflows/checks.yaml'
       - '**/*.kts'
       - '**/*.kt'
       - '**/*.properties'
       - '**/*.toml'
 
 jobs:
-  publish-kotlin-artifacts:
+  check-kotlin:
     permissions:
       packages: write
     runs-on: ubuntu-latest
