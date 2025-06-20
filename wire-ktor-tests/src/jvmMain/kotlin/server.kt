@@ -1,7 +1,4 @@
-import com.douman.wire_ktor.wire_ktor_tests.proto.ProtoResponse
-
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.ktor.http.ContentType
 import io.ktor.network.tls.certificates.buildKeyStore
 import io.ktor.server.application.Application
 import io.ktor.server.engine.ApplicationEngine
@@ -16,9 +13,9 @@ import io.ktor.server.jetty.jakarta.JettyApplicationEngine
 import io.ktor.server.jetty.jakarta.JettyApplicationEngineBase
 import io.ktor.server.request.path
 import io.ktor.server.request.receive
+import io.ktor.server.request.receiveChannel
 import io.ktor.server.request.receiveStream
 import io.ktor.server.response.respond
-import io.ktor.server.response.respondOutputStream
 import io.ktor.utils.io.discard
 
 import java.security.KeyStore
@@ -89,6 +86,24 @@ fun Application.module() {
 
                         logger.info { "Respond with stream" }
                         call.respond(internal.GrpcStreamResponse(0, listOf("1", "2")))
+                    }
+                    "ReturnSuccessOnList" -> {
+                        val stream = internal.ProtoStream(call.receiveChannel())
+                        var count = 0
+                        while (stream.hasNext()) {
+                            stream.next()
+                            count += 1
+                        }
+                        call.respond(internal.GrpcResponse(0, count.toString()))
+                    }
+                    "ReturnListSuccessOnList" -> {
+                        val stream = internal.ProtoStream(call.receiveChannel())
+
+                        val payload = mutableListOf<String>();
+                        while (stream.hasNext()) {
+                            payload.add(stream.next().pong)
+                        }
+                        call.respond(internal.GrpcStreamResponse(0, payload))
                     }
                     else -> call.respond(internal.GrpcResponse(12, null))
                 }

@@ -108,4 +108,48 @@ class WireKtorClientTest {
         assertEquals(response2.pong, "2")
         assertNull(response3)
     }
+
+    @Test fun shouldSendMultiRequests() {
+        val request = ProtoRequest("ping")
+
+        val result = grpcClient.ReturnSuccessOnList().executeBlocking()
+        result.first.write(request)
+        result.first.write(request)
+        result.first.write(request)
+        result.first.close()
+
+        logger.info { "Read first response" }
+        val response1 = result.second.read()
+        logger.info { "Read third response" }
+        val response2 = result.second.read()
+        assertNotNull(response1)
+        assertNull(response2)
+        assertEquals(response1.pong, "3")
+    }
+
+    @Test fun shouldSendMultiRequestsToHandleMultiOk() {
+        val request = ProtoRequest("ping")
+
+        val result = grpcClient.ReturnListSuccessOnList().executeBlocking()
+        result.first.write(ProtoRequest("ping1"))
+        result.first.write(ProtoRequest("ping2"))
+        result.first.write(ProtoRequest("ping3"))
+        result.first.close()
+
+        logger.info { "Read first response" }
+        val response1 = result.second.read()
+        logger.info { "Read second response" }
+        val response2 = result.second.read()
+        logger.info { "Read third response" }
+        val response3 = result.second.read()
+        logger.info { "Read fourth response" }
+        val response4 = result.second.read()
+        assertNotNull(response1)
+        assertNotNull(response2)
+        assertNotNull(response3)
+        assertNull(response4)
+        assertEquals(response1.pong, "ping1")
+        assertEquals(response2.pong, "ping2")
+        assertEquals(response3.pong, "ping3")
+    }
 }
